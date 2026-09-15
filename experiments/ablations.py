@@ -13,7 +13,8 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 TASK_IDS = [1, 2, 3]
 
 
-def run_continual(task_data, Z, kw, beta_schedule, adaptive_precision=False, n_iters=150, lr=1.0):
+def run_continual(task_data, Z, kw, beta_schedule, adaptive_precision=False,
+                   precision_override=None, n_iters=150, lr=1.0):
     T = len(task_data)
     R = np.full((T, T), np.nan)
     model = FSVI(Z, **kw)
@@ -22,7 +23,8 @@ def run_continual(task_data, Z, kw, beta_schedule, adaptive_precision=False, n_i
     for i, (Xi, yi, _) in enumerate(task_data):
         beta = beta_schedule(i, model, Xi)
         m, S, _ = pc_infer(model, Xi, yi, prior_mean, prior_cov, beta=beta,
-                            n_iters=n_iters, lr=lr, adaptive_precision=adaptive_precision)
+                            n_iters=n_iters, lr=lr, adaptive_precision=adaptive_precision,
+                            precision_override=precision_override)
         model.m, model.L = m, np.linalg.cholesky(S + 1e-8 * np.eye(model.M))
         prior_mean, prior_cov = model.posterior()
         for j in range(i + 1):
@@ -41,13 +43,12 @@ def main(seed=0):
     rows = []
 
     # 1. precision weighting on/off (beta fixed = 1)
-    for label, adaptive in [("precision: 1/sigma_n^2 (on)", False)]:
-        R = run_continual(task_data, Z, base_kw, lambda i, m, X: 1.0, adaptive_precision=adaptive)
-        rows.append((label, M.accuracy_matrix_to_metrics(R)))
-    # "off" here = precision fixed to 1.0 regardless of noise (breaks the
-    # Bayesian scaling); implemented by monkey-patching noise_std=1 only
-    # for the precision computation via a throwaway model copy trick:
-    R_nopi = run_continual(task_data, Z, {**base_kw, "noise_std": 1.0}, lambda i, m, X: 1.0)
+    R_pi = run_continual(task_data, Z, base_kw, lambda i, m, X: 1.0)
+    rows.append(("precision: 1/sigma_n^2 (on)", M.accuracy_matrix_to_metrics(R_pi)))
+    # "off" = precision forced to 1.0 for ALL points, independent of
+    # sigma_n^2, via the explicit precision_override toggle (isolates the
+    # weighting itself -- nothing else about the model changes).
+    R_nopi = run_continual(task_data, Z, base_kw, lambda i, m, X: 1.0, precision_override=1.0)
     rows.append(("precision: unweighted (Pi=1)", M.accuracy_matrix_to_metrics(R_nopi)))
 
     # 2. KL stability term on/off
