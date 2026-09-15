@@ -16,8 +16,8 @@ def pc_infer(
     n_iters=50,
     lr=0.1,
     adaptive_precision=False,
+    precision_override=None,
 ):
-
     M = fsvi.M
     A = _A_matrix(fsvi, X)  # (N, M), fixed given current inducing points
     prior_cov_inv = np.linalg.inv(prior_cov + 1e-8 * np.eye(M))
@@ -33,7 +33,9 @@ def pc_infer(
         eps = y - mean_f
 
         # --- precision weighting (Sec. 8-9) ---
-        if adaptive_precision:
+        if precision_override is not None:
+            Pi = np.broadcast_to(np.asarray(precision_override, dtype=float), (len(X),)).copy()
+        elif adaptive_precision:
             var_f = np.maximum(
                 fsvi.kernel_variance - np.sum(A * fsvi._Kxz(X), axis=1)
                 + np.sum((A @ S) * A, axis=1),
@@ -56,6 +58,7 @@ def pc_infer(
 
 
 def closed_form_optimum(fsvi, X, y, prior_mean, prior_cov, beta=1.0):
+
     M = fsvi.M
     A = _A_matrix(fsvi, X)
     prior_cov_inv = np.linalg.inv(prior_cov + 1e-8 * np.eye(M))
