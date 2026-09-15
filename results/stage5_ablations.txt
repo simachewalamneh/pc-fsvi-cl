@@ -1,0 +1,12 @@
+Ablation                               |  AvgPerf |   Forget |      BWT
+precision: 1/sigma_n^2 (on)            |   0.4784 |   0.2749 |   0.2749
+precision: unweighted (Pi=1)           |   0.4900 |   0.2425 |   0.2425
+beta=1 (stability on)                  |   0.4784 |   0.2749 |   0.2749
+beta=0 (no stability)                  |   0.9816 |   1.3717 |   1.3717
+adaptive beta_t (uncertainty-based)    |   0.5097 |   0.0158 |   0.0158
+lengthscale=0.5                        |   0.4569 |   0.2584 |   0.2584
+lengthscale=1.0                        |   0.4784 |   0.2749 |   0.2749
+lengthscale=2.0                        |   0.4926 |   0.2714 |   0.2714
+noise_std=0.05                         |   0.4736 |   0.2696 |   0.2696
+noise_std=0.1                          |   0.4784 |   0.2749 |   0.2749
+noise_std=0.3                          |   0.4837 |   0.2763 |   0.2763
