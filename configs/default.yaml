@@ -1,0 +1,25 @@
+seed: 0
+n_per_task: 30
+n_inducing: 15
+input_range: [-3, 3]
+
+kernel:
+  lengthscale: 1.0
+  variance: 1.0
+
+likelihood:
+  noise_std: 0.1
+
+continual:
+  beta: 1.0
+  pc_n_iters: 150
+  pc_lr: 1.0
+  fsvi_maxiter: 3000
+
+tasks:
+  - id: 1
+    description: "y = sin(x) + eps"
+  - id: 2
+    description: "y = sin(x) + 0.5 + eps"
+  - id: 3
+    description: "y = cos(x) + eps"
