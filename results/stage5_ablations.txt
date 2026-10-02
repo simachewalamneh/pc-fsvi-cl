@@ -1,12 +1,52 @@
-Ablation                               |  AvgPerf |   Forget |      BWT
-precision: 1/sigma_n^2 (on)            |   0.4784 |   0.2749 |   0.2749
-precision: unweighted (Pi=1)           |   0.4900 |   0.2425 |   0.2425
-beta=1 (stability on)                  |   0.4784 |   0.2749 |   0.2749
-beta=0 (no stability)                  |   0.9816 |   1.3717 |   1.3717
-adaptive beta_t (uncertainty-based)    |   0.5097 |   0.0158 |   0.0158
-lengthscale=0.5                        |   0.4569 |   0.2584 |   0.2584
-lengthscale=1.0                        |   0.4784 |   0.2749 |   0.2749
-lengthscale=2.0                        |   0.4926 |   0.2714 |   0.2714
-noise_std=0.05                         |   0.4736 |   0.2696 |   0.2696
-noise_std=0.1                          |   0.4784 |   0.2749 |   0.2749
-noise_std=0.3                          |   0.4837 |   0.2763 |   0.2763
+=== benchmark: conflicting (mean +- std over 5 seeds, held-out grid) ===
+Ablation                                                     |        AvgPerf |         Forget |            BWT |     Plasticity
+reference: sequential exact GP                               |   0.530+-0.012 |   0.283+-0.057 |  -0.283+-0.057 |   0.341+-0.027
+reference: EWC-like (accumulated Fisher)                     |   0.501+-0.008 |   0.033+-0.017 |  -0.033+-0.017 |   0.480+-0.012
+reference: frozen after task 1                               |   0.515+-0.008 |   0.000+-0.000 |   0.000+-0.000 |   0.515+-0.008
+precision: fixed 1/sigma_n^2                                 |   0.530+-0.012 |   0.283+-0.057 |  -0.283+-0.057 |   0.341+-0.027
+precision: adaptive 1/(sigma_n^2+var_f)                      |   0.539+-0.014 |   0.315+-0.061 |  -0.315+-0.061 |   0.329+-0.028
+precision: Pi=1 (rescales likelihood; NOT a pure ablation)   |   0.520+-0.013 |   0.249+-0.046 |  -0.249+-0.046 |   0.354+-0.019
+reference: independent models (no memory)                    |   0.706+-0.008 |   0.978+-0.024 |  -0.978+-0.024 |   0.054+-0.008
+PROPOSED: detect-and-spawn (thr=3)                           |   0.054+-0.008 |   0.000+-0.000 |   0.000+-0.000 |   0.054+-0.008
+detect-and-spawn (thr=1.5)                                   |   0.054+-0.008 |   0.000+-0.000 |   0.000+-0.000 |   0.054+-0.008
+detect-and-spawn (thr=10)                                    |   0.054+-0.008 |   0.000+-0.000 |   0.000+-0.000 |   0.054+-0.008
+beta=1e-3 (almost no stability)                              |   1.155+-0.306 |   1.132+-0.178 |  -1.132+-0.178 |   0.401+-0.207
+beta=0.3                                                     |   0.647+-0.015 |   0.645+-0.048 |  -0.645+-0.048 |   0.217+-0.041
+beta=1                                                       |   0.530+-0.012 |   0.283+-0.057 |  -0.283+-0.057 |   0.341+-0.027
+beta=3                                                       |   0.495+-0.006 |   0.070+-0.023 |  -0.070+-0.023 |   0.448+-0.019
+beta=10                                                      |   0.502+-0.007 |   0.014+-0.008 |  -0.014+-0.008 |   0.493+-0.011
+adaptive beta: surprise-based                                |   0.736+-0.056 |   0.887+-0.018 |  -0.887+-0.018 |   0.144+-0.059
+lengthscale=0.5 (beta=1)                                     |   0.557+-0.021 |   0.291+-0.062 |  -0.291+-0.062 |   0.363+-0.022
+lengthscale=1.0 (beta=1)                                     |   0.530+-0.012 |   0.283+-0.057 |  -0.283+-0.057 |   0.341+-0.027
+lengthscale=2.0 (beta=1)                                     |   0.518+-0.012 |   0.281+-0.050 |  -0.281+-0.050 |   0.331+-0.023
+noise_std=0.05 (beta=1)                                      |   0.534+-0.010 |   0.284+-0.057 |  -0.284+-0.057 |   0.345+-0.028
+noise_std=0.1 (beta=1)                                       |   0.530+-0.012 |   0.283+-0.057 |  -0.283+-0.057 |   0.341+-0.027
+noise_std=0.3 (beta=1)                                       |   0.523+-0.014 |   0.280+-0.056 |  -0.280+-0.056 |   0.336+-0.025
+
+=== benchmark: regional (mean +- std over 5 seeds, held-out grid) ===
+Ablation                                                     |        AvgPerf |         Forget |            BWT |     Plasticity
+reference: sequential exact GP                               |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+reference: EWC-like (accumulated Fisher)                     |   0.077+-0.014 |  -0.003+-0.003 |   0.004+-0.003 |   0.080+-0.015
+reference: frozen after task 1                               |   0.463+-0.067 |  -0.000+-0.000 |   0.000+-0.000 |   0.463+-0.067
+precision: fixed 1/sigma_n^2                                 |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+precision: adaptive 1/(sigma_n^2+var_f)                      |   0.026+-0.004 |  -0.005+-0.004 |   0.005+-0.004 |   0.029+-0.003
+precision: Pi=1 (rescales likelihood; NOT a pure ablation)   |   0.048+-0.006 |  -0.024+-0.010 |   0.027+-0.011 |   0.066+-0.007
+reference: independent models (no memory)                    |   0.438+-0.029 |   0.612+-0.048 |  -0.612+-0.048 |   0.031+-0.004
+PROPOSED: detect-and-spawn (thr=3)                           |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+detect-and-spawn (thr=1.5)                                   |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+detect-and-spawn (thr=10)                                    |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+beta=1e-3 (almost no stability)                              |   0.989+-0.298 |   1.392+-0.449 |  -1.392+-0.449 |   0.061+-0.015
+beta=0.3                                                     |   0.029+-0.008 |  -0.004+-0.006 |   0.004+-0.006 |   0.032+-0.006
+beta=1                                                       |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+beta=3                                                       |   0.027+-0.006 |  -0.007+-0.005 |   0.008+-0.005 |   0.032+-0.005
+beta=10                                                      |   0.085+-0.015 |  -0.013+-0.004 |   0.013+-0.004 |   0.094+-0.017
+adaptive beta: surprise-based                                |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+lengthscale=0.5 (beta=1)                                     |   0.034+-0.006 |  -0.007+-0.007 |   0.009+-0.006 |   0.040+-0.003
+lengthscale=1.0 (beta=1)                                     |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+lengthscale=2.0 (beta=1)                                     |   0.019+-0.007 |  -0.002+-0.003 |   0.005+-0.004 |   0.022+-0.009
+noise_std=0.05 (beta=1)                                      |   0.028+-0.006 |  -0.004+-0.005 |   0.005+-0.005 |   0.031+-0.005
+noise_std=0.1 (beta=1)                                       |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
+noise_std=0.3 (beta=1)                                       |   0.023+-0.007 |  -0.007+-0.006 |   0.008+-0.005 |   0.028+-0.006
+
+Notes: BWT is signed (negative = old tasks got worse). Plasticity = mean diagonal RMSE.
+Forgetting alone is misleading: 'frozen after task 1' has zero forgetting.

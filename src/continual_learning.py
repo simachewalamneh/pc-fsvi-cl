@@ -1,50 +1,67 @@
 import numpy as np
+from scipy.optimize import minimize as spminimize
+
 from .variational import FSVI
 from .predictive_coding import pc_infer
 from .gp import ExactGP
+from .uncertainty import standardized_error
 from . import metrics as M
 
 
-def _eval_on_tasks(predict_fn, tasks_xy):
-    """tasks_xy: list of (X, y, f_true) per task. Returns list of RMSE."""
-    out = []
-    for X, y, f_true in tasks_xy:
-        mean, var = predict_fn(X)
-        out.append(M.rmse(f_true, mean))
-    return out
+def _safe_chol(S, jitter=1e-8):
+    """Symmetrise and add escalating jitter so near-singular covariances
+    (e.g. beta=0 with a rank-deficient A^T A) do not crash Cholesky."""
+    S = 0.5 * (S + S.T)
+    for k in range(12):
+        try:
+            return np.linalg.cholesky(S + jitter * (10.0 ** k) * np.eye(S.shape[0]))
+        except np.linalg.LinAlgError:
+            continue
+    raise np.linalg.LinAlgError("covariance not PD even with jitter")
 
 
-def independent_baseline(task_data, Z, kernel_kwargs, beta=1.0, maxiter=3000):
+def _score(predict_fn, j, task_data, eval_data):
+    """RMSE of predict_fn on task j. Uses the held-out grid if eval_data is
+    given, otherwise falls back to the task's training inputs."""
+    if eval_data is not None:
+        Xj, fj = eval_data[j]
+    else:
+        Xj, _, fj = task_data[j]
+    mean, _ = predict_fn(Xj)
+    return M.rmse(fj, mean)
+
+
+def independent_baseline(task_data, Z, kernel_kwargs, eval_data=None, maxiter=3000):
+    """Lower bound: a FRESH model per task, no memory. Row i = model_i scored
+    on tasks 0..i (so off-diagonals show pure catastrophic forgetting)."""
     T = len(task_data)
-    R = np.zeros((T, T))
+    R = np.full((T, T), np.nan)
     for i, (Xi, yi, _) in enumerate(task_data):
         model = FSVI(Z, **kernel_kwargs)
-        model.fit(Xi, yi, beta=beta, prior_mean=None, prior_cov=None, maxiter=maxiter)
+        model.fit(Xi, yi, beta=1.0, prior_mean=None, prior_cov=None, maxiter=maxiter)
         for j in range(i + 1):
-            Xj, _, fj = task_data[j]
-            mean, _ = model.predict(Xj)
-            R[i, j] = M.rmse(fj, mean) if j == i else np.nan  # independent: no cross-task model
-    # independent models can't be evaluated on other tasks -> only diagonal meaningful
+            R[i, j] = _score(model.predict, j, task_data, eval_data)
     return R
 
 
-def sequential_gp_baseline(task_data):
+def sequential_gp_baseline(task_data, eval_data=None, noise_std=0.1,
+                           lengthscale=1.0, variance=1.0):
+    """Exact GP refit on all data seen so far = exact Bayes for a SINGLE-function
+    model. Not an 'oracle' for CL when tasks conflict."""
     T = len(task_data)
     R = np.full((T, T), np.nan)
     X_all, y_all = None, None
     for i, (Xi, yi, _) in enumerate(task_data):
         X_all = Xi if X_all is None else np.vstack([X_all, Xi])
         y_all = yi if y_all is None else np.concatenate([y_all, yi])
-        gp = ExactGP(noise_std=0.1)
+        gp = ExactGP(lengthscale=lengthscale, variance=variance, noise_std=noise_std)
         gp.fit(X_all, y_all)
         for j in range(i + 1):
-            Xj, _, fj = task_data[j]
-            mean, _ = gp.predict(Xj)
-            R[i, j] = M.rmse(fj, mean)
+            R[i, j] = _score(gp.predict, j, task_data, eval_data)
     return R
 
 
-def fsvi_continual(task_data, Z, kernel_kwargs, beta=1.0, maxiter=3000):
+def fsvi_continual(task_data, Z, kernel_kwargs, beta=1.0, eval_data=None, maxiter=3000):
     T = len(task_data)
     R = np.full((T, T), np.nan)
     model = FSVI(Z, **kernel_kwargs)
@@ -53,69 +70,121 @@ def fsvi_continual(task_data, Z, kernel_kwargs, beta=1.0, maxiter=3000):
         model.fit(Xi, yi, beta=beta, prior_mean=prior_mean, prior_cov=prior_cov, maxiter=maxiter)
         prior_mean, prior_cov = model.posterior()
         for j in range(i + 1):
-            Xj, _, fj = task_data[j]
-            mean, _ = model.predict(Xj)
-            R[i, j] = M.rmse(fj, mean)
+            R[i, j] = _score(model.predict, j, task_data, eval_data)
     return R, model
 
 
+def surprise(model, X, y):
+    """mean z^2 of new labels under the model's current posterior (~1 if consistent)."""
+    mean, var = model.predict(X)
+    z = standardized_error(y, mean, var, model.noise_std)
+    return float(np.mean(z ** 2))
+
+
+def surprise_beta(i, model, X, y, lo=0.05, hi=5.0):
+    """Adaptive stability weight from PREDICTIVE SURPRISE on the new task's
+    labels, computed under the current posterior BEFORE fitting:
+        s = mean z^2,  z = (y - mean) / sqrt(var_f + sigma_n^2)
+        beta = clip(1 / s, lo, hi)
+    s ~ 1  -> data consistent with the old posterior -> beta ~ 1 (stable)
+    s >> 1 -> task conflicts with what is known      -> beta small (plastic)
+    Input-space variance alone cannot do this: when tasks share inputs the
+    variance is low even though the function changed (concept shift)."""
+    if i == 0:
+        return 1.0
+    s = surprise(model, X, y)
+    return float(np.clip(1.0 / max(s, 1e-8), lo, hi))
+
+
 def pc_fsvi_continual(
-    task_data, Z, kernel_kwargs, beta=1.0, n_iters=200, lr=0.05, adaptive_precision=False
+    task_data, Z, kernel_kwargs, beta=1.0, n_iters=150, lr=1.0,
+    adaptive_precision=False, precision_override=None, eval_data=None,
 ):
+    """beta: float, or callable beta(i, model, X, y) -> float (per-task)."""
     T = len(task_data)
     R = np.full((T, T), np.nan)
     model = FSVI(Z, **kernel_kwargs)
     prior_mean = np.zeros(model.M)
     prior_cov = model.Kzz.copy()
-    histories = []
+    histories, betas = [], []
     for i, (Xi, yi, _) in enumerate(task_data):
+        b = beta(i, model, Xi, yi) if callable(beta) else float(beta)
+        betas.append(b)
         m, S, hist = pc_infer(
-            model, Xi, yi, prior_mean, prior_cov, beta=beta,
-            n_iters=n_iters, lr=lr, adaptive_precision=adaptive_precision,
+            model, Xi, yi, prior_mean, prior_cov, beta=b, n_iters=n_iters, lr=lr,
+            adaptive_precision=adaptive_precision, precision_override=precision_override,
         )
-        model.m, model.L = m, np.linalg.cholesky(S + 1e-8 * np.eye(model.M))
+        model.m, model.L = m, _safe_chol(S)
+        hist["beta"] = b
         histories.append(hist)
         prior_mean, prior_cov = model.posterior()
         for j in range(i + 1):
-            Xj, _, fj = task_data[j]
-            mean, _ = model.predict(Xj)
-            R[i, j] = M.rmse(fj, mean)
+            R[i, j] = _score(model.predict, j, task_data, eval_data)
+    model.betas_used = betas
     return R, model, histories
 
 
-def ewc_like_baseline(task_data, Z, kernel_kwargs, lam=10.0, maxiter=3000):
- 
-    from scipy.optimize import minimize as spminimize
-
+def ewc_like_baseline(task_data, Z, kernel_kwargs, lam=10.0, maxiter=3000,
+                      accumulate=True, eval_data=None):
+    """Point-estimate EWC on the inducing values u.
+    accumulate=True : online EWC, Fisher summed over tasks (protects ALL past tasks)
+    accumulate=False: old behaviour, Fisher overwritten (only protects the last task)"""
     T = len(task_data)
     R = np.full((T, T), np.nan)
     model = FSVI(Z, **kernel_kwargs)
     m_star = np.zeros(model.M)
-    Fisher = np.zeros(model.M)  # diagonal Fisher, 0 for task 1 (no penalty)
+    Fisher = np.zeros(model.M)
     sigma_n2 = model.noise_std ** 2
 
-    def A_matrix(X):
-        Kxz = model._Kxz(X)
-        return Kxz @ model.Kzz_inv
-
     for i, (Xi, yi, _) in enumerate(task_data):
-        A = A_matrix(Xi)
+        A = model._Kxz(Xi) @ model.Kzz_inv
 
-        def neg_log_post(m):
+        def neg_log_post(m, A=A, yi=yi, Fisher=Fisher, m_star=m_star):
             resid = yi - A @ m
-            nll = 0.5 * np.sum(resid ** 2) / sigma_n2
-            ewc_pen = 0.5 * lam * np.sum(Fisher * (m - m_star) ** 2)
-            return nll + ewc_pen
+            gp_prior = 0.5 * m @ model.Kzz_inv @ m  # keeps u well-posed where no data was seen
+            return (0.5 * np.sum(resid ** 2) / sigma_n2 + gp_prior
+                    + 0.5 * lam * np.sum(Fisher * (m - m_star) ** 2))
 
-        res = spminimize(neg_log_post, m_star.copy(), method="L-BFGS-B",
-                          options={"maxiter": maxiter})
+        res = spminimize(neg_log_post, m_star.copy(), method="L-BFGS-B", options={"maxiter": maxiter})
         m_star = res.x
         model.m = m_star
-        model.L = np.eye(model.M) * 1e-3  # point estimate: negligible covariance
-        # diagonal Fisher = diag(A^T A) / sigma_n^2 (Gauss-Newton approx)
-        Fisher = np.sum(A ** 2, axis=0) / sigma_n2
+        model.L = np.eye(model.M) * 1e-3
+        F_new = np.sum(A ** 2, axis=0) / sigma_n2
+        Fisher = Fisher + F_new if accumulate else F_new
         for j in range(i + 1):
-            Xj, _, fj = task_data[j]
-            mean, _ = model.predict(Xj)
-            R[i, j] = M.rmse(fj, mean)
+            R[i, j] = _score(model.predict, j, task_data, eval_data)
     return R, model
+
+
+def spawn_continual(task_data, Z, kernel_kwargs, thr=3.0, beta=1.0,
+                    n_iters=150, lr=1.0, eval_data=None):
+    """Detect-and-spawn. Keep a list of FSVI components (each = its own q(u)).
+    For each new task, compute surprise s under every existing component:
+      min s < thr  -> new data is consistent with a known component: chain it
+                      (posterior becomes prior, exact Bayes, no forgetting there)
+      else         -> conflict: spawn a fresh component from the GP prior and
+                      leave all old components untouched (zero interference).
+    Evaluation is task-incremental: task j is predicted by the component it was
+    assigned to (task identity known at test time). Returns (R, comps, assign)."""
+    T = len(task_data)
+    R = np.full((T, T), np.nan)
+    comps, assign = [], []
+    for i, (Xi, yi, _) in enumerate(task_data):
+        if comps:
+            s_all = [surprise(c, Xi, yi) for c in comps]
+            k = int(np.argmin(s_all))
+        if comps and s_all[k] < thr:
+            model = comps[k]
+            prior_mean, prior_cov = model.posterior()
+        else:
+            model = FSVI(Z, **kernel_kwargs)
+            comps.append(model)
+            k = len(comps) - 1
+            prior_mean, prior_cov = np.zeros(model.M), model.Kzz.copy()
+        m, S, _ = pc_infer(model, Xi, yi, prior_mean, prior_cov, beta=beta,
+                           n_iters=n_iters, lr=lr)
+        model.m, model.L = m, _safe_chol(S)
+        assign.append(k)
+        for j in range(i + 1):
+            R[i, j] = _score(comps[assign[j]].predict, j, task_data, eval_data)
+    return R, comps, assign

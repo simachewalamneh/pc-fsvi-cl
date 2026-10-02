@@ -1,97 +1,102 @@
+"""Stage 5: ablations, multi-seed, held-out grid, two benchmarks.
+Reports mean +- std over seeds for AvgPerf / Forget / BWT / Plasticity."""
 import os
 import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from src.utils import make_task, set_seed
-from src.variational import FSVI
-from src.predictive_coding import pc_infer
+from src.utils import make_benchmark
+from src.continual_learning import (
+    pc_fsvi_continual, sequential_gp_baseline, ewc_like_baseline, surprise_beta,
+    spawn_continual, independent_baseline,
+)
 from src import metrics as M
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
 os.makedirs(RESULTS_DIR, exist_ok=True)
-TASK_IDS = [1, 2, 3]
+
+SEEDS = [0, 1, 2, 3, 4]
+BASE_KW = dict(lengthscale=1.0, kernel_variance=1.0, noise_std=0.1)
+Z = np.linspace(-3, 3, 15).reshape(-1, 1)
 
 
-def run_continual(task_data, Z, kw, beta_schedule, adaptive_precision=False,
-                   precision_override=None, n_iters=150, lr=1.0):
-    T = len(task_data)
-    R = np.full((T, T), np.nan)
-    model = FSVI(Z, **kw)
-    prior_mean = np.zeros(model.M)
-    prior_cov = model.Kzz.copy()
-    for i, (Xi, yi, _) in enumerate(task_data):
-        beta = beta_schedule(i, model, Xi)
-        m, S, _ = pc_infer(model, Xi, yi, prior_mean, prior_cov, beta=beta,
-                            n_iters=n_iters, lr=lr, adaptive_precision=adaptive_precision,
-                            precision_override=precision_override)
-        model.m, model.L = m, np.linalg.cholesky(S + 1e-8 * np.eye(model.M))
-        prior_mean, prior_cov = model.posterior()
-        for j in range(i + 1):
-            Xj, _, fj = task_data[j]
-            mean, _ = model.predict(Xj)
-            R[i, j] = M.rmse(fj, mean)
-    return R
+def fixed(b):
+    return lambda i, model, X, y: b
 
 
-def main(seed=0):
-    rng = set_seed(seed)
-    task_data = [make_task(t, n=30, rng=rng) for t in TASK_IDS]
-    Z = np.linspace(-3, 3, 15).reshape(-1, 1)
-    base_kw = dict(lengthscale=1.0, kernel_variance=1.0, noise_std=0.1)
+def frozen_after_first(i, model, X, y):
+    return 1.0 if i == 0 else 1e6
 
-    rows = []
 
-    # 1. precision weighting on/off (beta fixed = 1)
-    R_pi = run_continual(task_data, Z, base_kw, lambda i, m, X: 1.0)
-    rows.append(("precision: 1/sigma_n^2 (on)", M.accuracy_matrix_to_metrics(R_pi)))
-    # "off" = precision forced to 1.0 for ALL points, independent of
-    # sigma_n^2, via the explicit precision_override toggle (isolates the
-    # weighting itself -- nothing else about the model changes).
-    R_nopi = run_continual(task_data, Z, base_kw, lambda i, m, X: 1.0, precision_override=1.0)
-    rows.append(("precision: unweighted (Pi=1)", M.accuracy_matrix_to_metrics(R_nopi)))
+def configs():
+    """(label, kernel_kwargs, runner(task_data, eval_data, kw) -> R)"""
+    def pc(beta=1.0, **extra):
+        return lambda td, ev, kw: pc_fsvi_continual(td, Z, kw, beta=beta, eval_data=ev, **extra)[0]
 
-    # 2. KL stability term on/off
-    R_beta1 = run_continual(task_data, Z, base_kw, lambda i, m, X: 1.0)
-    rows.append(("beta=1 (stability on)", M.accuracy_matrix_to_metrics(R_beta1)))
-    R_beta0 = run_continual(task_data, Z, base_kw, lambda i, m, X: 0.0)
-    rows.append(("beta=0 (no stability)", M.accuracy_matrix_to_metrics(R_beta0)))
+    cfgs = [
+        ("reference: sequential exact GP", BASE_KW,
+         lambda td, ev, kw: sequential_gp_baseline(td, eval_data=ev, noise_std=kw["noise_std"],
+                                                   lengthscale=kw["lengthscale"])),
+        ("reference: EWC-like (accumulated Fisher)", BASE_KW,
+         lambda td, ev, kw: ewc_like_baseline(td, Z, kw, lam=10.0, accumulate=True, eval_data=ev)[0]),
+        ("reference: frozen after task 1", BASE_KW, pc(frozen_after_first)),
+        ("precision: fixed 1/sigma_n^2", BASE_KW, pc(fixed(1.0))),
+        ("precision: adaptive 1/(sigma_n^2+var_f)", BASE_KW, pc(fixed(1.0), adaptive_precision=True)),
+        ("precision: Pi=1 (rescales likelihood; NOT a pure ablation)", BASE_KW,
+         pc(fixed(1.0), precision_override=1.0)),
+        ("reference: independent models (no memory)", BASE_KW,
+         lambda td, ev, kw: independent_baseline(td, Z, kw, eval_data=ev)),
+        ("PROPOSED: detect-and-spawn (thr=3)", BASE_KW,
+         lambda td, ev, kw: spawn_continual(td, Z, kw, thr=3.0, eval_data=ev)[0]),
+        ("detect-and-spawn (thr=1.5)", BASE_KW,
+         lambda td, ev, kw: spawn_continual(td, Z, kw, thr=1.5, eval_data=ev)[0]),
+        ("detect-and-spawn (thr=10)", BASE_KW,
+         lambda td, ev, kw: spawn_continual(td, Z, kw, thr=10.0, eval_data=ev)[0]),
+        ("beta=1e-3 (almost no stability)", BASE_KW, pc(fixed(1e-3))),
+        ("beta=0.3", BASE_KW, pc(fixed(0.3))),
+        ("beta=1", BASE_KW, pc(fixed(1.0))),
+        ("beta=3", BASE_KW, pc(fixed(3.0))),
+        ("beta=10", BASE_KW, pc(fixed(10.0))),
+        ("adaptive beta: surprise-based", BASE_KW, pc(surprise_beta)),
+    ]
+    for ls in (0.5, 1.0, 2.0):
+        cfgs.append((f"lengthscale={ls} (beta=1)", {**BASE_KW, "lengthscale": ls}, pc(fixed(1.0))))
+    for ns in (0.05, 0.1, 0.3):
+        cfgs.append((f"noise_std={ns} (beta=1)", {**BASE_KW, "noise_std": ns}, pc(fixed(1.0))))
+    return cfgs
 
-    # 3. fixed vs adaptive beta
-    def adaptive_beta(i, model, X):
-        if i == 0:
-            return 1.0
-        _, var = model.predict(X)
-        mean_var = float(np.mean(var))
-        # higher pre-task predictive uncertainty on the new inputs -> the
-        # model already "doesn't know" this region -> lean more plastic
-        return float(np.clip(1.0 / (mean_var + 1e-3), 0.1, 10.0))
 
-    R_adapt = run_continual(task_data, Z, base_kw, adaptive_beta)
-    rows.append(("adaptive beta_t (uncertainty-based)", M.accuracy_matrix_to_metrics(R_adapt)))
+def run_benchmark(name):
+    cfgs = configs()
+    table = {label: [] for label, _, _ in cfgs}
+    for seed in SEEDS:
+        td, ev = make_benchmark(name, seed=seed, n=30)
+        for label, kw, runner in cfgs:
+            table[label].append(M.accuracy_matrix_to_metrics(runner(td, ev, kw)))
+    lines = [f"=== benchmark: {name} (mean +- std over {len(SEEDS)} seeds, held-out grid) ===",
+             f"{'Ablation':60s} | {'AvgPerf':>14s} | {'Forget':>14s} | {'BWT':>14s} | {'Plasticity':>14s}"]
+    for label, _, _ in cfgs:
+        cells = []
+        for key in ("average_performance", "forgetting", "backward_transfer", "plasticity"):
+            v = np.array([r[key] for r in table[label]])
+            cells.append(f"{v.mean():6.3f}+-{v.std():5.3f}")
+        lines.append(f"{label:60s} | " + " | ".join(f"{c:>14s}" for c in cells))
+    return "\n".join(lines)
 
-    # 4. kernel lengthscale sweep
-    for ls in [0.5, 1.0, 2.0]:
-        kw = {**base_kw, "lengthscale": ls}
-        R = run_continual(task_data, Z, kw, lambda i, m, X: 1.0)
-        rows.append((f"lengthscale={ls}", M.accuracy_matrix_to_metrics(R)))
 
-    # 5. noise level sweep
-    for ns in [0.05, 0.1, 0.3]:
-        kw = {**base_kw, "noise_std": ns}
-        R = run_continual(task_data, Z, kw, lambda i, m, X: 1.0)
-        rows.append((f"noise_std={ns}", M.accuracy_matrix_to_metrics(R)))
-
-    print(f"{'Ablation':38s} | {'AvgPerf':>8s} | {'Forget':>8s} | {'BWT':>8s}")
-    for name, m in rows:
-        print(f"{name:38s} | {m['average_performance']:8.4f} | {m['forgetting']:8.4f} | {m['backward_transfer']:8.4f}")
-
-    out_path = os.path.join(RESULTS_DIR, "stage5_ablations.txt")
-    with open(out_path, "w") as fh:
-        fh.write(f"{'Ablation':38s} | {'AvgPerf':>8s} | {'Forget':>8s} | {'BWT':>8s}\n")
-        for name, m in rows:
-            fh.write(f"{name:38s} | {m['average_performance']:8.4f} | {m['forgetting']:8.4f} | {m['backward_transfer']:8.4f}\n")
-    print(f"results saved to {out_path}")
+def main():
+    out = []
+    for name in ("conflicting", "regional"):
+        block = run_benchmark(name)
+        print(block, "\n")
+        out.append(block)
+    note = ("Notes: BWT is signed (negative = old tasks got worse). Plasticity = mean diagonal RMSE.\n"
+            "Forgetting alone is misleading: 'frozen after task 1' has zero forgetting.")
+    print(note)
+    path = os.path.join(RESULTS_DIR, "stage5_ablations.txt")
+    with open(path, "w") as fh:
+        fh.write("\n\n".join(out) + "\n\n" + note + "\n")
+    print(f"results saved to {path}")
 
 
 if __name__ == "__main__":
