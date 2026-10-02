@@ -48,5 +48,44 @@ noise_std=0.05 (beta=1)                                      |   0.028+-0.006 | 
 noise_std=0.1 (beta=1)                                       |   0.025+-0.004 |  -0.005+-0.005 |   0.005+-0.005 |   0.029+-0.003
 noise_std=0.3 (beta=1)                                       |   0.023+-0.007 |  -0.007+-0.006 |   0.008+-0.005 |   0.028+-0.006
 
+=== benchmark: offset (mean +- std over 5 seeds, held-out grid) ===
+Ablation                                                     |        AvgPerf |         Forget |            BWT |     Plasticity
+reference: sequential exact GP                               |   0.156+-0.004 |   0.054+-0.011 |  -0.054+-0.011 |   0.121+-0.006
+reference: EWC-like (accumulated Fisher)                     |   0.193+-0.009 |   0.000+-0.005 |   0.000+-0.006 |   0.193+-0.013
+reference: frozen after task 1                               |   0.215+-0.013 |   0.000+-0.000 |   0.000+-0.000 |   0.215+-0.013
+beta=3                                                       |   0.177+-0.004 |   0.012+-0.008 |  -0.012+-0.009 |   0.169+-0.009
+always-merge (thr=inf = plain chaining)                      |   0.156+-0.004 |   0.054+-0.011 |  -0.054+-0.011 |   0.121+-0.006
+always-spawn (thr=0)                                         |   0.053+-0.005 |   0.000+-0.000 |   0.000+-0.000 |   0.053+-0.005
+spawn: surprise thr=1.5                                      |   0.053+-0.005 |   0.000+-0.000 |   0.000+-0.000 |   0.053+-0.005
+spawn: surprise thr=3                                        |   0.060+-0.016 |   0.007+-0.014 |  -0.007+-0.014 |   0.055+-0.008
+spawn: surprise thr=10                                       |   0.156+-0.004 |   0.054+-0.011 |  -0.054+-0.011 |   0.121+-0.006
+spawn: evidence (Bayes factor, no threshold)                 |   0.053+-0.005 |   0.000+-0.000 |   0.000+-0.000 |   0.053+-0.005
+
+=== benchmark: halfconflict (mean +- std over 5 seeds, held-out grid) ===
+Ablation                                                     |        AvgPerf |         Forget |            BWT |     Plasticity
+reference: sequential exact GP                               |   0.448+-0.036 |   0.209+-0.048 |  -0.209+-0.048 |   0.309+-0.031
+reference: EWC-like (accumulated Fisher)                     |   0.448+-0.049 |   0.067+-0.057 |  -0.067+-0.057 |   0.403+-0.025
+reference: frozen after task 1                               |   0.469+-0.046 |   0.000+-0.000 |   0.000+-0.000 |   0.469+-0.046
+beta=3                                                       |   0.437+-0.055 |   0.144+-0.057 |  -0.144+-0.057 |   0.340+-0.037
+always-merge (thr=inf = plain chaining)                      |   0.448+-0.036 |   0.209+-0.048 |  -0.209+-0.048 |   0.309+-0.031
+always-spawn (thr=0)                                         |   0.119+-0.018 |   0.000+-0.000 |   0.000+-0.000 |   0.119+-0.018
+spawn: surprise thr=1.5                                      |   0.119+-0.018 |   0.000+-0.000 |   0.000+-0.000 |   0.119+-0.018
+spawn: surprise thr=3                                        |   0.119+-0.018 |   0.000+-0.000 |   0.000+-0.000 |   0.119+-0.018
+spawn: surprise thr=10                                       |   0.139+-0.014 |   0.020+-0.018 |  -0.020+-0.018 |   0.126+-0.016
+spawn: evidence (Bayes factor, no threshold)                 |   0.119+-0.018 |   0.000+-0.000 |   0.000+-0.000 |   0.119+-0.018
+
+=== benchmark: revisit (mean +- std over 5 seeds, held-out grid) ===
+Ablation                                                     |        AvgPerf |         Forget |            BWT |     Plasticity
+reference: sequential exact GP                               |   0.552+-0.080 |   0.210+-0.101 |  -0.210+-0.101 |   0.413+-0.043
+reference: EWC-like (accumulated Fisher)                     |   0.537+-0.099 |   0.119+-0.107 |  -0.119+-0.107 |   0.458+-0.038
+reference: frozen after task 1                               |   0.433+-0.048 |   0.000+-0.000 |  -0.000+-0.000 |   0.433+-0.048
+beta=3                                                       |   0.521+-0.079 |   0.153+-0.099 |  -0.153+-0.099 |   0.419+-0.033
+always-merge (thr=inf = plain chaining)                      |   0.552+-0.080 |   0.210+-0.101 |  -0.210+-0.101 |   0.413+-0.043
+always-spawn (thr=0)                                         |   0.164+-0.026 |   0.000+-0.000 |   0.000+-0.000 |   0.164+-0.026
+spawn: surprise thr=1.5                                      |   0.164+-0.027 |  -0.000+-0.001 |   0.000+-0.001 |   0.164+-0.027
+spawn: surprise thr=3                                        |   0.155+-0.030 |  -0.006+-0.015 |   0.006+-0.015 |   0.159+-0.027
+spawn: surprise thr=10                                       |   0.150+-0.024 |  -0.011+-0.017 |   0.011+-0.017 |   0.158+-0.026
+spawn: evidence (Bayes factor, no threshold)                 |   0.153+-0.024 |  -0.005+-0.014 |   0.005+-0.014 |   0.157+-0.025
+
 Notes: BWT is signed (negative = old tasks got worse). Plasticity = mean diagonal RMSE.
 Forgetting alone is misleading: 'frozen after task 1' has zero forgetting.

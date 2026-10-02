@@ -66,11 +66,33 @@ def configs():
     return cfgs
 
 
+def spawn_cfgs():
+    sp = lambda **k: (lambda td, ev, kw: spawn_continual(td, Z, kw, eval_data=ev, **k)[0])
+    return [
+        ("always-merge (thr=inf = plain chaining)", BASE_KW, sp(thr=np.inf)),
+        ("always-spawn (thr=0)", BASE_KW, sp(thr=0.0)),
+        ("spawn: surprise thr=1.5", BASE_KW, sp(thr=1.5)),
+        ("spawn: surprise thr=3", BASE_KW, sp(thr=3.0)),
+        ("spawn: surprise thr=10", BASE_KW, sp(thr=10.0)),
+        ("spawn: evidence (Bayes factor, no threshold)", BASE_KW, sp(criterion="evidence")),
+    ]
+
+
+def focus_configs():
+    base = {c[0]: c for c in configs()}
+    keep = ["reference: sequential exact GP", "reference: EWC-like (accumulated Fisher)",
+            "reference: frozen after task 1", "beta=3"]
+    return [base[k] for k in keep] + spawn_cfgs()
+
+
+N_PER_TASK = {"conflicting": 30, "regional": 30, "offset": 30, "halfconflict": 15, "revisit": 10}
+
+
 def run_benchmark(name):
-    cfgs = configs()
+    cfgs = configs() if name in ("conflicting", "regional") else focus_configs()
     table = {label: [] for label, _, _ in cfgs}
     for seed in SEEDS:
-        td, ev = make_benchmark(name, seed=seed, n=30)
+        td, ev = make_benchmark(name, seed=seed, n=N_PER_TASK[name])
         for label, kw, runner in cfgs:
             table[label].append(M.accuracy_matrix_to_metrics(runner(td, ev, kw)))
     lines = [f"=== benchmark: {name} (mean +- std over {len(SEEDS)} seeds, held-out grid) ===",
@@ -86,7 +108,7 @@ def run_benchmark(name):
 
 def main():
     out = []
-    for name in ("conflicting", "regional"):
+    for name in ("conflicting", "regional", "offset", "halfconflict", "revisit"):
         block = run_benchmark(name)
         print(block, "\n")
         out.append(block)

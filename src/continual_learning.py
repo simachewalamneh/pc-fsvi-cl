@@ -5,6 +5,7 @@ from .variational import FSVI
 from .predictive_coding import pc_infer
 from .gp import ExactGP
 from .uncertainty import standardized_error
+from .utils import rbf_kernel
 from . import metrics as M
 
 
@@ -156,24 +157,54 @@ def ewc_like_baseline(task_data, Z, kernel_kwargs, lam=10.0, maxiter=3000,
     return R, model
 
 
+def log_evidence(model, X, y, m, S):
+    """log p(y | X) under q(u)=N(m,S) and the GP conditional + Gaussian noise:
+        y ~ N(A m,  Kxx - A Kzx + A S A^T + sigma_n^2 I),  A = Kxz Kzz^-1.
+    With (m,S)=(0,Kzz) this is the fresh-GP-prior evidence."""
+    Kxz = model._Kxz(X)
+    A = Kxz @ model.Kzz_inv
+    Kxx = rbf_kernel(X, X, model.lengthscale, model.kernel_variance)
+    C = Kxx - A @ Kxz.T + A @ S @ A.T + model.noise_std ** 2 * np.eye(len(X))
+    L = _safe_chol(C)
+    r = np.linalg.solve(L, np.asarray(y) - A @ m)
+    return float(-0.5 * r @ r - np.sum(np.log(np.diag(L))) - 0.5 * len(X) * np.log(2 * np.pi))
+
+
 def spawn_continual(task_data, Z, kernel_kwargs, thr=3.0, beta=1.0,
-                    n_iters=150, lr=1.0, eval_data=None):
+                    n_iters=150, lr=1.0, eval_data=None,
+                    criterion="surprise", margin=0.0):
     """Detect-and-spawn. Keep a list of FSVI components (each = its own q(u)).
-    For each new task, compute surprise s under every existing component:
-      min s < thr  -> new data is consistent with a known component: chain it
-                      (posterior becomes prior, exact Bayes, no forgetting there)
-      else         -> conflict: spawn a fresh component from the GP prior and
-                      leave all old components untouched (zero interference).
-    Evaluation is task-incremental: task j is predicted by the component it was
-    assigned to (task identity known at test time). Returns (R, comps, assign)."""
+
+    criterion="surprise": s = mean z^2 under each component;
+        merge into argmin-s component if s < thr, else spawn.
+        thr=0 -> ALWAYS spawn; thr=inf -> ALWAYS merge (= plain chaining).
+    criterion="evidence": Bayes-factor test, threshold-free. Compare
+        log p(y|X) under the best existing component vs under a fresh GP prior;
+        merge if  log_ev_best + margin >= log_ev_fresh, else spawn.
+
+    Merge -> chain (posterior becomes prior; exact Bayes). Spawn -> fresh
+    component from the GP prior; old components untouched.
+    Evaluation is task-incremental (task j predicted by its assigned component).
+    Returns (R, comps, assign)."""
     T = len(task_data)
     R = np.full((T, T), np.nan)
     comps, assign = [], []
     for i, (Xi, yi, _) in enumerate(task_data):
+        merge, k = False, -1
         if comps:
-            s_all = [surprise(c, Xi, yi) for c in comps]
-            k = int(np.argmin(s_all))
-        if comps and s_all[k] < thr:
+            if criterion == "surprise":
+                sc = [surprise(c, Xi, yi) for c in comps]
+                k = int(np.argmin(sc))
+                merge = sc[k] < thr
+            elif criterion == "evidence":
+                ev = [log_evidence(c, Xi, yi, *c.posterior()) for c in comps]
+                k = int(np.argmax(ev))
+                fresh = FSVI(Z, **kernel_kwargs)
+                ev_new = log_evidence(fresh, Xi, yi, np.zeros(fresh.M), fresh.Kzz)
+                merge = ev[k] + margin >= ev_new
+            else:
+                raise ValueError(criterion)
+        if merge:
             model = comps[k]
             prior_mean, prior_cov = model.posterior()
         else:

@@ -64,7 +64,7 @@ def make_benchmark(name: str, seed=0, n=30, noise_std=0.1, n_test=100):
     task_data : list of (X, y, f_true) training sets, one per task
     eval_data : list of (X_test, f_test) on a dense HELD-OUT grid per task
                 (the task's own input range, noise-free targets)
-    name      : "conflicting" or "regional"
+    name      : "conflicting", "regional", "offset", "halfconflict" or "revisit"
     """
     rng = np.random.default_rng(seed)
     if name == "conflicting":
@@ -78,6 +78,37 @@ def make_benchmark(name: str, seed=0, n=30, noise_std=0.1, n_test=100):
             lo, hi = REGIONS[t]
             g = np.linspace(lo, hi, n_test).reshape(-1, 1)
             eval_data.append((g, np.sin(g).ravel()))
+    elif name == "offset":
+        # PARTIAL conflict: same shape, small per-task vertical drift
+        offs = (0.0, 0.2, 0.4)
+        grid = np.linspace(-3, 3, n_test).reshape(-1, 1)
+        task_data, eval_data = [], []
+        for o in offs:
+            x = np.sort(rng.uniform(-3, 3, size=n))
+            f = np.sin(x) + o
+            task_data.append((x.reshape(-1, 1), f + rng.normal(0, noise_std, size=n), f))
+            eval_data.append((grid, np.sin(grid).ravel() + o))
+    elif name == "halfconflict":
+        # PARTIAL conflict: tasks agree on x<0, disagree on x>=0 (scale s_t)
+        scales = (1.0, -1.0, 0.5)
+        grid = np.linspace(-3, 3, n_test).reshape(-1, 1)
+        fn = lambda x, s: np.where(x < 0, np.sin(x), s * np.sin(x))
+        task_data, eval_data = [], []
+        for s_t in scales:
+            x = np.sort(rng.uniform(-3, 3, size=n))
+            f = fn(x, s_t)
+            task_data.append((x.reshape(-1, 1), f + rng.normal(0, noise_std, size=n), f))
+            eval_data.append((grid, fn(grid.ravel(), s_t)))
+    elif name == "revisit":
+        # tasks RECUR: sin, cos, sin  (few, noisy points -> pooling helps)
+        grid = np.linspace(-3, 3, n_test).reshape(-1, 1)
+        fs = (np.sin, np.cos, np.sin)
+        task_data, eval_data = [], []
+        for fn in fs:
+            x = np.sort(rng.uniform(-3, 3, size=n))
+            f = fn(x)
+            task_data.append((x.reshape(-1, 1), f + rng.normal(0, 2 * noise_std, size=n), f))
+            eval_data.append((grid, fn(grid).ravel()))
     else:
         raise ValueError(name)
     return task_data, eval_data

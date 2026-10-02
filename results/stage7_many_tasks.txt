@@ -1,0 +1,39 @@
+=== Stage 7: many tasks (pool of 4 functions, n=10/task, noise=0.2, 5 seeds) ===
+Memory = floats stored for component posteriors, (H+1)+(H+1)^2 per component.
+features         T method    |       AvgPerf |     BWT | #comps |  memory | purity | time (s)
+random           6 merge     |  0.670+-0.031 |  -0.159 |    1.0 |     992 |   0.33 |    0.004
+random           6 spawn     |  0.244+-0.023 |   0.000 |    6.0 |    5952 |   1.00 |    0.004
+random           6 evidence  |  0.223+-0.032 |   0.019 |    3.6 |    3571 |   0.90 |    0.006
+random          12 merge     |  0.582+-0.046 |  -0.068 |    1.0 |     992 |   0.42 |    0.013
+random          12 spawn     |  0.241+-0.031 |   0.000 |   12.0 |   11904 |   1.00 |    0.013
+random          12 evidence  |  0.169+-0.017 |   0.036 |    4.0 |    3968 |   0.93 |    0.018
+random          24 merge     |  0.651+-0.039 |  -0.051 |    1.0 |     992 |   0.35 |    0.049
+random          24 spawn     |  0.240+-0.014 |   0.000 |   24.0 |   23808 |   1.00 |    0.047
+random          24 evidence  |  0.126+-0.019 |   0.046 |    4.0 |    3968 |   0.96 |    0.058
+random          48 merge     |  0.645+-0.028 |  -0.021 |    1.0 |     992 |   0.31 |    0.168
+random          48 spawn     |  0.255+-0.013 |   0.000 |   48.0 |   47616 |   1.00 |    0.203
+random          48 evidence  |  0.097+-0.010 |   0.038 |    5.0 |    4960 |   0.98 |    0.241
+BP-pretrained    6 merge     |  0.677+-0.027 |  -0.161 |    1.0 |     992 |   0.33 |    0.004
+BP-pretrained    6 spawn     |  0.231+-0.034 |   0.000 |    6.0 |    5952 |   1.00 |    0.004
+BP-pretrained    6 evidence  |  0.208+-0.039 |   0.021 |    3.8 |    3769 |   0.93 |    0.006
+BP-pretrained   12 merge     |  0.585+-0.046 |  -0.072 |    1.0 |     992 |   0.42 |    0.014
+BP-pretrained   12 spawn     |  0.228+-0.023 |   0.000 |   12.0 |   11904 |   1.00 |    0.017
+BP-pretrained   12 evidence  |  0.153+-0.019 |   0.033 |    4.0 |    3968 |   0.95 |    0.022
+BP-pretrained   24 merge     |  0.653+-0.039 |  -0.052 |    1.0 |     992 |   0.35 |    0.047
+BP-pretrained   24 spawn     |  0.222+-0.025 |   0.000 |   24.0 |   23808 |   1.00 |    0.047
+BP-pretrained   24 evidence  |  0.113+-0.025 |   0.041 |    4.2 |    4166 |   0.97 |    0.061
+BP-pretrained   48 merge     |  0.646+-0.027 |  -0.020 |    1.0 |     992 |   0.31 |    0.186
+BP-pretrained   48 spawn     |  0.236+-0.013 |   0.000 |   48.0 |   47616 |   1.00 |    0.182
+BP-pretrained   48 evidence  |  0.094+-0.030 |   0.032 |    4.8 |    4761 |   0.97 |    0.211
+PC-pretrained    6 merge     |  0.671+-0.031 |  -0.161 |    1.0 |     992 |   0.33 |    0.004
+PC-pretrained    6 spawn     |  0.232+-0.028 |   0.000 |    6.0 |    5952 |   1.00 |    0.004
+PC-pretrained    6 evidence  |  0.209+-0.031 |   0.020 |    3.8 |    3769 |   0.93 |    0.006
+PC-pretrained   12 merge     |  0.582+-0.046 |  -0.070 |    1.0 |     992 |   0.42 |    0.012
+PC-pretrained   12 spawn     |  0.238+-0.032 |   0.000 |   12.0 |   11904 |   1.00 |    0.012
+PC-pretrained   12 evidence  |  0.150+-0.026 |   0.040 |    4.0 |    3968 |   0.95 |    0.016
+PC-pretrained   24 merge     |  0.650+-0.038 |  -0.053 |    1.0 |     992 |   0.35 |    0.041
+PC-pretrained   24 spawn     |  0.234+-0.027 |   0.000 |   24.0 |   23808 |   1.00 |    0.044
+PC-pretrained   24 evidence  |  0.110+-0.026 |   0.046 |    4.0 |    3968 |   0.97 |    0.057
+PC-pretrained   48 merge     |  0.645+-0.027 |  -0.021 |    1.0 |     992 |   0.31 |    0.180
+PC-pretrained   48 spawn     |  0.247+-0.016 |   0.000 |   48.0 |   47616 |   1.00 |    0.161
+PC-pretrained   48 evidence  |  0.082+-0.019 |   0.040 |    4.6 |    4563 |   0.98 |    0.203
